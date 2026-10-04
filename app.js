@@ -217,14 +217,13 @@
   function refreshSteps() {
     setStepState(modeStep, S.role ? 'active' : 'locked');
 
-    if (S.role === 'joiner') {
+    if (S.role === 'host') {
+      setStepState(el.stepPlayers, S.mode ? 'active' : 'locked');
+    } else {
+      // joiner OR no role chosen yet: the players step must not exist at all
       setStepState(el.stepPlayers, 'hidden');
       if (el.countGrid) el.countGrid.innerHTML = '';
       S.needed = null;
-    } else if (S.role === 'host' && S.mode) {
-      setStepState(el.stepPlayers, 'active');
-    } else {
-      setStepState(el.stepPlayers, 'locked');
     }
 
     setStepState(el.stepCode, S.mode ? 'active' : 'locked');
@@ -234,7 +233,7 @@
       if (title) title.textContent = 'How many players do you need?';
     }
 
-    if (el.codeStepNum) el.codeStepNum.textContent = S.role === 'joiner' ? '03' : '04';
+    if (el.codeStepNum) el.codeStepNum.textContent = S.role === 'host' ? '04' : '03';
   }
 
   /* ─── LIVE + STATS ─────────────────────────────────────── */
