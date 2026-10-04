@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CS2 HVH Team Finder — Real-time Teammate Matchmaking</title>
+<meta name="description" content="Find CS2 teammates in real time. Pick your mode, drop your invite code, get matched instantly.">
+<meta name="theme-color" content="#07090d">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="bg-grid" aria-hidden="true"></div>
+<div class="bg-glow" aria-hidden="true"></div>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark">
+      <span>CS2</span>
+    </div>
+    <div class="brand-text">
+      <strong>HVH TEAM FINDER</strong>
+      <span>real-time matchmaking</span>
+    </div>
+  </div>
+
+  <div class="topbar-right">
+    <div class="live-pill" id="livePill">
+      <span class="live-dot"></span>
+      <span id="liveText">Connecting…</span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ═══════════════ SETUP ═══════════════ -->
+  <section class="panel" id="panel-setup">
+    <div class="panel-head">
+      <h1>Find your squad</h1>
+      <p>Pick a mode, drop your CS2 invite code, and get matched in real time.</p>
+    </div>
+
+    <div class="steps">
+
+      <!-- step 1 · role -->
+      <div class="step is-active" data-step="role">
+        <div class="step-head">
+          <span class="step-num">01</span>
+          <span class="step-title">Choose your side</span>
+        </div>
+        <div class="role-grid">
+          <button class="role-card" data-role="host" type="button">
+            <span class="role-glow"></span>
+            <span class="role-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6l7-3z"/>
+                <path d="M12 9v6M9 12h6"/>
+              </svg>
+            </span>
+            <span class="role-name">I need teammates</span>
+            <span class="role-desc">You own the lobby and need players to fill it.</span>
+            <span class="role-check">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            </span>
+          </button>
+
+          <button class="role-card" data-role="joiner" type="button">
+            <span class="role-glow"></span>
+            <span class="role-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="8" r="3.4"/>
+                <path d="M4.5 19.6a6.5 6.5 0 0113 0"/>
+                <path d="M19 5v5M16.5 7.5h5"/>
+              </svg>
+            </span>
+            <span class="role-name">I'm looking for a team</span>
+            <span class="role-desc">You're solo and want to join someone's lobby.</span>
+            <span class="role-check">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <!-- step 2 · mode -->
+      <div class="step is-locked" data-step="mode">
+        <div class="step-head">
+          <span class="step-num">02</span>
+          <span class="step-title">Game mode</span>
+        </div>
+        <div class="mode-grid" id="modeGrid"></div>
+      </div>
+
+      <!-- step 3 · players -->
+      <div class="step is-locked" data-step="players" id="stepPlayers">
+        <div class="step-head">
+          <span class="step-num">03</span>
+          <span class="step-title">How many players do you need?</span>
+        </div>
+        <div class="count-grid" id="countGrid"></div>
+        <p class="step-hint" id="countHint">Select how many open slots to fill.</p>
+      </div>
+
+      <!-- step 4 · code -->
+      <div class="step is-locked" data-step="code" id="stepCode">
+        <div class="step-head">
+          <span class="step-num" id="codeStepNum">04</span>
+          <span class="step-title">Your CS2 invite code</span>
+        </div>
+        <div class="code-field">
+          <input id="codeInput" type="text" placeholder="S7656119…" autocomplete="off"
+                 spellcheck="false" maxlength="64" aria-label="CS2 invite code">
+          <button class="icon-btn" id="clearCode" type="button" title="Clear" aria-label="Clear">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <p class="step-hint">In CS2: <b>Friends → Add Friend →</b> copy your friend code and paste it here.</p>
+      </div>
+    </div>
+
+    <button id="searchBtn" class="btn-primary" type="button" disabled>
+      <span class="btn-label">Search</span>
+      <span class="btn-shine"></span>
+    </button>
+    <p class="form-error" id="formError" role="alert"></p>
+  </section>
+
+  <!-- ═══════════════ SEARCHING ═══════════════ -->
+  <section class="panel hidden" id="panel-searching">
+    <div class="searching">
+      <div class="radar" aria-hidden="true">
+        <div class="radar-sweep"></div>
+        <div class="radar-ring"></div>
+        <div class="radar-ring"></div>
+        <div class="radar-ring"></div>
+        <div class="radar-core"></div>
+      </div>
+
+      <h2 id="searchingTitle">Searching…</h2>
+      <p class="sub" id="searchingSub"></p>
+
+      <div class="queue-meta">
+        <div class="queue-chip">
+          <span class="queue-chip-label">Mode</span>
+          <span class="queue-chip-value" id="qMode">—</span>
+        </div>
+        <div class="queue-chip">
+          <span class="queue-chip-label">Role</span>
+          <span class="queue-chip-value" id="qRole">—</span>
+        </div>
+        <div class="queue-chip">
+          <span class="queue-chip-label">Elapsed</span>
+          <span class="queue-chip-value" id="qTime">00:00</span>
+        </div>
+      </div>
+
+      <button class="btn-ghost" id="cancelBtn" type="button">Cancel search</button>
+    </div>
+  </section>
+
+  <!-- ═══════════════ MATCHED ═══════════════ -->
+  <section class="panel hidden" id="panel-matched">
+
+    <!-- host view -->
+    <div id="hostView" class="hidden">
+      <div class="status-line" id="hostStatus">
+        <span class="pulse-dot"></span>
+        <span id="hostStatusText">Searching for players…</span>
+      </div>
+
+      <div class="match-head">
+        <h2>Party <span class="mono" id="hostPartyId">—</span></h2>
+        <p class="sub" id="hostSub">Invite the players below in CS2.</p>
+      </div>
+
+      <div class="progress-wrap">
+        <div class="progress-top">
+          <span><b id="hostFilled">0</b> / <span id="hostNeeded">4</span> players found</span>
+          <span class="progress-pct" id="hostPct">0%</span>
+        </div>
+        <div class="progress-bar"><div id="hostBar"></div></div>
+      </div>
+
+      <ul class="code-list" id="hostCodeList"></ul>
+
+      <div class="empty-state" id="hostEmpty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+        </svg>
+        <p>Waiting for players to join…</p>
+        <span>Players appear here the moment they match with you.</span>
+      </div>
+
+      <div class="chat-block">
+        <div class="chat-head">
+          <span>Party chat</span>
+          <span class="chat-count" id="hostChatCount">0</span>
+        </div>
+        <div class="chat-log" id="hostChatLog" data-log="host"></div>
+        <form class="chat-form" data-chat="host" autocomplete="off">
+          <input type="text" placeholder="Say something…" maxlength="300" aria-label="Chat message">
+          <button type="submit" aria-label="Send">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+          </button>
+        </form>
+      </div>
+
+      <button class="btn-ghost" id="hostCancel" type="button">Cancel &amp; close party</button>
+    </div>
+
+    <!-- joiner view -->
+    <div id="joinerView" class="hidden">
+      <div class="match-card">
+        <div class="match-ring">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+        </div>
+        <h2>Match found</h2>
+        <p class="match-message" id="joinerMessage"></p>
+        <p class="match-note">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
+          Keep CS2 open — the lobby leader has your invite code.
+        </p>
+      </div>
+
+      <div class="chat-block">
+        <div class="chat-head">
+          <span>Party chat</span>
+          <span class="chat-count" id="joinerChatCount">0</span>
+        </div>
+        <div class="chat-log" id="joinerChatLog" data-log="joiner"></div>
+        <form class="chat-form" data-chat="joiner" autocomplete="off">
+          <input type="text" placeholder="Say something…" maxlength="300" aria-label="Chat message">
+          <button type="submit" aria-label="Send">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+          </button>
+        </form>
+      </div>
+
+      <button class="btn-primary" id="joinerAgain" type="button">Search again</button>
+    </div>
+
+  </section>
+</main>
+
+<footer class="foot">
+  <span>Not affiliated with Valve. Use at your own risk.</span>
+  <span class="foot-sep">·</span>
+  <span id="footCount">—</span>
+</footer>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
