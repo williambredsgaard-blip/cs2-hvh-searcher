@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════
    CS2 HVH TEAM FINDER — client
-   Single source of truth for step visibility via refreshSteps()
+   Players-count step is now available to BOTH roles.
    ═══════════════════════════════════════════════════════════════ */
 
 (() => {
@@ -9,15 +9,11 @@
   const $  = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-  /* ─────────── fallback modes ─────────── */
-
   const MODES_FALLBACK = {
     premier:     { label: 'Premier',     teamSize: 5, blurb: 'Ranked 5v5' },
     wingman:     { label: 'Wingman',     teamSize: 2, blurb: 'Duo 2v2' },
     competitive: { label: 'Competitive', teamSize: 5, blurb: 'Classic 5v5' },
   };
-
-  /* ─────────── audio ─────────── */
 
   const audio = {
     ctx: null, ready: false,
@@ -48,8 +44,6 @@
     error() { this.tone(170, .17, 'sawtooth', .032); },
   };
 
-  /* ─────────── toasts ─────────── */
-
   const toastBox = $('#toasts');
   function toast(text, kind = 'info', ms = 4200) {
     if (!toastBox) return;
@@ -63,8 +57,6 @@
     }, ms);
   }
 
-  /* ─────────── icons ─────────── */
-
   const MODE_ICONS = {
     premier: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6l7-3z"/><path d="M12 8.6l1.25 2.6 2.85.4-2.05 2 .48 2.85L12 15.1l-2.53 1.35.48-2.85-2.05-2 2.85-.4L12 8.6z"/></svg>`,
     wingman: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.3"/><path d="M2.9 19.6a6.15 6.15 0 0112.2 0"/><circle cx="17.6" cy="9.4" r="2.55"/><path d="M15.3 19.6a5.6 5.6 0 016.8-5.05"/></svg>`,
@@ -74,14 +66,12 @@
   const COPY_ICON  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 012-2h9"/></svg>`;
   const CHECK_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`;
 
-  /* ─────────── state ─────────── */
-
   const S = {
     id: null,
     callsign: null,
     modes: { ...MODES_FALLBACK },
     stats: null,
-    role: null,           // 'host' | 'joiner' | null
+    role: null,
     mode: null,
     needed: null,
     code: '',
@@ -92,8 +82,6 @@
     hadPartyBeforeDrop: false,
     socketOnline: false,
   };
-
-  /* ─────────── DOM refs ─────────── */
 
   const panels = {
     setup:     $('#panel-setup'),
@@ -146,15 +134,9 @@
   };
 
   /* ═══════════════════════════════════════════════════════════
-     STEP VISIBILITY — single source of truth
+     STEP VISIBILITY
      ═══════════════════════════════════════════════════════════ */
 
-  /**
-   * setStepState — three states for a step:
-   *   'active'  : visible + clickable
-   *   'locked'  : visible + dimmed + not clickable
-   *   'hidden'  : display:none (removed from flow entirely)
-   */
   function setStepState(node, state) {
     if (!node) return;
     node.classList.remove('is-locked', 'is-active');
@@ -167,45 +149,38 @@
     }
     if (state === 'locked') {
       node.classList.add('is-locked');
-      // Belt-and-braces: the class does this in CSS, but explicit is safer.
       node.style.pointerEvents = 'none';
       return;
     }
-    // 'active'
     node.classList.add('is-active');
-    node.style.pointerEvents = '';
   }
 
-  /**
-   * refreshSteps — reads the current state and updates every step.
-   * Called after ANY change to role / mode. Never called with stale data.
-   */
   function refreshSteps() {
-    // ── Step 02 · mode ────────────────────────────────
+    // 02 · mode — needs a role
     setStepState(modeStep, S.role ? 'active' : 'locked');
 
-    // ── Step 03 · players ─────────────────────────────
-    if (S.role === 'joiner') {
-      // Joiners don't pick a slot count — hide the step entirely.
-      setStepState(el.stepPlayers, 'hidden');
-    } else if (S.role === 'host') {
-      // Hosts see the count grid once they've picked a mode.
-      setStepState(el.stepPlayers, S.mode ? 'active' : 'locked');
+    // 03 · players — needs role + mode, available to BOTH roles
+    if (S.role && S.mode) {
+      setStepState(el.stepPlayers, 'active');
     } else {
       setStepState(el.stepPlayers, 'locked');
     }
 
-    // ── Step 04 · code ────────────────────────────────
-    // Needs a mode to be chosen. Works for both roles.
+    // 04 · code — needs a mode
     setStepState(el.stepCode, S.mode ? 'active' : 'locked');
 
-    // ── Renumber the code step for joiners ────────────
-    if (el.codeStepNum) {
-      el.codeStepNum.textContent = (S.role === 'joiner') ? '03' : '04';
+    // Retitle the players step based on role
+    if (el.stepPlayers) {
+      const title = el.stepPlayers.querySelector('.step-title');
+      if (title) {
+        title.textContent = S.role === 'joiner'
+          ? 'How many players should the lobby need?'
+          : 'How many players do you need?';
+      }
     }
 
-    // ── Debug log so you can see what's happening ─────
-    console.log('[steps]', { role: S.role, mode: S.mode, needed: S.needed });
+    // Code step is always 04 now
+    if (el.codeStepNum) el.codeStepNum.textContent = '04';
   }
 
   /* ═══════════════════════════════════════════════════════════
@@ -280,7 +255,6 @@
         </button>`;
     }).join('');
 
-    // Preserve any previously-selected mode highlight
     if (S.mode) {
       $$('.mode-card', el.modeGrid).forEach((c) =>
         c.classList.toggle('selected', c.dataset.mode === S.mode)
@@ -294,20 +268,10 @@
 
   function selectRole(role) {
     S.role = role;
-
-    // Highlight
     $$('.role-card').forEach((c) =>
       c.classList.toggle('selected', c.dataset.role === role)
     );
-
-    // State adjustments
-    if (role === 'joiner') {
-      S.needed = null;
-    } else if (role === 'host') {
-      // If they already picked a mode, rebuild the count grid for it.
-      if (S.mode) buildCountGrid(S.mode);
-    }
-
+    if (S.mode) buildCountGrid(S.mode);
     refreshSteps();
     audio.click();
     updateSearchBtn();
@@ -315,15 +279,10 @@
 
   function selectMode(mode) {
     S.mode = mode;
-
-    // Highlight
     $$('.mode-card').forEach((c) =>
       c.classList.toggle('selected', c.dataset.mode === mode)
     );
-
-    // Build the count grid only for hosts (joiners don't need it).
-    if (S.role === 'host') buildCountGrid(mode);
-
+    buildCountGrid(mode);
     refreshSteps();
     audio.click();
     updateSearchBtn();
@@ -336,6 +295,9 @@
     const options = [];
     for (let n = 1; n <= max; n++) options.push(n);
 
+    // Remember previous selection if still valid
+    const prev = S.needed;
+
     el.countGrid.innerHTML = options.map((n) => `
       <button class="count-btn" data-count="${n}" type="button">
         <span class="count-num">${n}</span>
@@ -343,26 +305,28 @@
       </button>`).join('');
 
     if (el.countHint) {
-      el.countHint.textContent =
-        `You'll be the lobby leader — pick how many open slots to fill (max ${max}).`;
+      el.countHint.textContent = S.role === 'joiner'
+        ? `Pick how many open slots the lobby you join should have (max ${max}).`
+        : `You'll be the lobby leader — pick how many open slots to fill (max ${max}).`;
     }
 
-    // Auto-select a sensible default (1 player).
-    const first = el.countGrid.querySelector('.count-btn');
-    if (first) {
-      S.needed = parseInt(first.dataset.count, 10);
-      first.classList.add('selected');
+    // Restore previous selection if possible, otherwise pick first
+    let target = null;
+    if (prev && options.includes(prev)) {
+      target = el.countGrid.querySelector(`.count-btn[data-count="${prev}"]`);
+    }
+    if (!target) target = el.countGrid.querySelector('.count-btn');
+
+    if (target) {
+      S.needed = parseInt(target.dataset.count, 10);
+      target.classList.add('selected');
     }
   }
-
-  /* ─────────── search button state ─────────── */
 
   function updateSearchBtn() {
     if (!el.searchBtn) return;
     const codeOk = S.code.length >= 3 && !/\s/.test(S.code);
-    let ok = false;
-    if (S.role === 'host')        ok = !!(S.mode && S.needed && codeOk);
-    else if (S.role === 'joiner') ok = !!(S.mode && codeOk);
+    const ok = !!(S.role && S.mode && S.needed && codeOk);
 
     el.searchBtn.disabled = !ok;
     const label = el.searchBtn.querySelector('.btn-label');
@@ -397,7 +361,7 @@
     if (el.searchingSub) {
       el.searchingSub.textContent = S.role === 'host'
         ? 'Players will appear here the moment they match with you.'
-        : `Waiting for a ${modeLabel} lobby that needs players.`;
+        : `Waiting for a ${modeLabel} lobby that needs ${S.needed} player${S.needed === 1 ? '' : 's'}.`;
     }
     if (el.qTime) el.qTime.textContent = '00:00';
     showPanel('searching');
@@ -419,8 +383,6 @@
     updateSearchBtn();
     showPanel('setup');
   }
-
-  /* ─────────── elapsed timer ─────────── */
 
   setInterval(() => {
     if (S.phase !== 'searching' || !S.startedAt || !el.qTime) return;
@@ -547,10 +509,6 @@
     renderChat(key);
   }
 
-  /* ═══════════════════════════════════════════════════════════
-     UTILITIES
-     ═══════════════════════════════════════════════════════════ */
-
   function escapeHtml(str) {
     return String(str == null ? '' : str)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -581,17 +539,15 @@
   }
 
   /* ═══════════════════════════════════════════════════════════
-     ATTACH UI LISTENERS (before socket)
+     EVENT LISTENERS
      ═══════════════════════════════════════════════════════════ */
 
   buildModeGrid();
 
-  // Role cards
   $$('.role-card').forEach((card) => {
     card.addEventListener('click', () => selectRole(card.dataset.role));
   });
 
-  // Mode cards (delegated)
   if (el.modeGrid) {
     el.modeGrid.addEventListener('click', (e) => {
       const card = e.target.closest('.mode-card');
@@ -600,7 +556,6 @@
     });
   }
 
-  // Count buttons (delegated — grid is rebuilt)
   if (el.countGrid) {
     el.countGrid.addEventListener('click', (e) => {
       const btn = e.target.closest('.count-btn');
@@ -614,7 +569,6 @@
     });
   }
 
-  // Code input
   if (el.codeInput) {
     el.codeInput.addEventListener('input', () => {
       S.code = el.codeInput.value.trim();
@@ -639,7 +593,6 @@
     });
   }
 
-  // Copy buttons
   document.addEventListener('click', async (e) => {
     const btn = e.target.closest('.copy-btn');
     if (!btn) return;
@@ -658,7 +611,6 @@
     }
   });
 
-  // Chat forms
   $$('.chat-form').forEach((form) => {
     form.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -675,19 +627,14 @@
     });
   });
 
-  // Cancel / reset
   if (el.cancelBtn)   el.cancelBtn.addEventListener('click', () => { audio.click(); doCancel(); });
   if (el.hostCancel)  el.hostCancel.addEventListener('click', () => { audio.click(); doCancel(); });
   if (el.joinerAgain) el.joinerAgain.addEventListener('click', () => { audio.click(); doCancel(); });
+  if (el.searchBtn)   el.searchBtn.addEventListener('click', submitSearch);
 
-  // Search
-  if (el.searchBtn) el.searchBtn.addEventListener('click', submitSearch);
-
-  // Initial chat placeholders
   renderChat('host');
   renderChat('joiner');
 
-  // Code local storage
   const STORE_KEY = 'cs2-hvh-code';
   function saveCode() {
     try { localStorage.setItem(STORE_KEY, S.code); } catch { /* noop */ }
@@ -746,7 +693,7 @@
         });
     } else {
       socket.emit('search:join',
-        { mode: S.mode, code: S.code },
+        { mode: S.mode, needed: S.needed, code: S.code },
         (res) => {
           if (!res || !res.ok) {
             if (el.formError) el.formError.textContent = (res && res.error) || 'Something went wrong.';
@@ -781,7 +728,7 @@
   }
 
   /* ═══════════════════════════════════════════════════════════
-     SOCKET LAYER
+     SOCKET
      ═══════════════════════════════════════════════════════════ */
 
   let socket = null;
