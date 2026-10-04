@@ -253,21 +253,24 @@
   function refreshSteps() {
     setStepState(modeStep, S.role ? 'active' : 'locked');
 
-    if (S.role && S.mode) setStepState(el.stepPlayers, 'active');
-    else                  setStepState(el.stepPlayers, 'locked');
+    if (S.role === 'joiner') {
+      // Joiners don't choose a player count — the host already did.
+      setStepState(el.stepPlayers, 'hidden');
+    } else if (S.role && S.mode) {
+      setStepState(el.stepPlayers, 'active');
+    } else {
+      setStepState(el.stepPlayers, 'locked');
+    }
 
     setStepState(el.stepCode, S.mode ? 'active' : 'locked');
 
     if (el.stepPlayers) {
       const title = el.stepPlayers.querySelector('.step-title');
-      if (title) {
-        title.textContent = S.role === 'joiner'
-          ? 'How many players should the lobby need?'
-          : 'How many players do you need?';
-      }
+      if (title) title.textContent = 'How many players do you need?';
     }
 
-    if (el.codeStepNum) el.codeStepNum.textContent = '04';
+    // Code step is 03 for joiners (no player-count step), 04 for hosts.
+    if (el.codeStepNum) el.codeStepNum.textContent = S.role === 'joiner' ? '03' : '04';
   }
 
   /* ═══════════════════════════════════════════════════════════
@@ -358,7 +361,14 @@
     $$('.role-card').forEach((c) =>
       c.classList.toggle('selected', c.dataset.role === role)
     );
-    if (S.mode) buildCountGrid(S.mode);
+
+    if (role === 'joiner') {
+      // Joiners have no player-count preference.
+      S.needed = null;
+    } else if (S.mode) {
+      buildCountGrid(S.mode);
+    }
+
     refreshSteps();
     audio.click();
     updateSearchBtn();
@@ -369,7 +379,7 @@
     $$('.mode-card').forEach((c) =>
       c.classList.toggle('selected', c.dataset.mode === mode)
     );
-    buildCountGrid(mode);
+    if (S.role === 'host') buildCountGrid(mode);
     refreshSteps();
     audio.click();
     updateSearchBtn();
@@ -390,9 +400,8 @@
       </button>`).join('');
 
     if (el.countHint) {
-      el.countHint.textContent = S.role === 'joiner'
-        ? `Pick how many open slots the lobby you join should have (max ${max}).`
-        : `You'll be the lobby leader — pick how many open slots to fill (max ${max}).`;
+      el.countHint.textContent =
+        `You'll be the lobby leader — pick how many open slots to fill (max ${max}).`;
     }
 
     let target = null;
@@ -409,8 +418,10 @@
 
   function updateSearchBtn() {
     if (!el.searchBtn) return;
-    const codeOk = S.code.length >= 3 && !/\s/.test(S.code);
-    const ok = !!(S.role && S.mode && S.needed && codeOk);
+    const codeOk   = S.code.length >= 3 && !/\s/.test(S.code);
+    const neededOk = S.role === 'joiner' || !!S.needed;
+    const ok = !!(S.role && S.mode && neededOk && codeOk);
+
     el.searchBtn.disabled = !ok;
     const label = el.searchBtn.querySelector('.btn-label');
     if (label) {
@@ -444,7 +455,7 @@
     if (el.searchingSub) {
       el.searchingSub.textContent = S.role === 'host'
         ? 'Players will appear here the moment they match with you.'
-        : `Waiting for a ${modeLabel} lobby that needs ${S.needed} player${S.needed === 1 ? '' : 's'}.`;
+        : `Scanning for an open ${modeLabel} lobby — you'll be matched the moment one opens up.`;
     }
     if (el.qTime) el.qTime.textContent = '00:00';
     showPanel('searching');
@@ -787,8 +798,9 @@
           renderParty();
         });
     } else {
+      // Joiners take any open lobby in their chosen mode — no `needed` sent.
       socket.emit('search:join',
-        { mode: S.mode, needed: S.needed, code: S.code },
+        { mode: S.mode, code: S.code },
         (res) => {
           if (!res || !res.ok) {
             if (el.formError) el.formError.textContent = (res && res.error) || 'Something went wrong.';
