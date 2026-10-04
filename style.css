@@ -1180,6 +1180,6 @@ button span,
    JS is stale or cached.
    ═══════════════════════════════════════════════════════════════ */
 
-#panel-setup[data-role="joiner"] [data-step="players"] {
+#panel-setup:not([data-role="host"]) [data-step="players"] {
   display: none !important;
 }
