@@ -1,5 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════
-   CS2 HVH TEAM FINDER — client (crash-proof restructure)
+   CS2 HVH TEAM FINDER — client
+   Single source of truth for step visibility via refreshSteps()
    ═══════════════════════════════════════════════════════════════ */
 
 (() => {
@@ -8,7 +9,7 @@
   const $  = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-  /* ─────────── fallback modes (so UI works without socket) ─────────── */
+  /* ─────────── fallback modes ─────────── */
 
   const MODES_FALLBACK = {
     premier:     { label: 'Premier',     teamSize: 5, blurb: 'Ranked 5v5' },
@@ -80,7 +81,7 @@
     callsign: null,
     modes: { ...MODES_FALLBACK },
     stats: null,
-    role: null,
+    role: null,           // 'host' | 'joiner' | null
     mode: null,
     needed: null,
     code: '',
@@ -99,6 +100,9 @@
     searching: $('#panel-searching'),
     matched:   $('#panel-matched'),
   };
+
+  const setupPanel = $('#panel-setup');
+  const modeStep   = setupPanel ? setupPanel.querySelector('[data-step="mode"]') : null;
 
   const el = {
     modeGrid:     $('#modeGrid'),
@@ -142,10 +146,71 @@
   };
 
   /* ═══════════════════════════════════════════════════════════
-     UI LAYER — attaches immediately, does NOT depend on socket
+     STEP VISIBILITY — single source of truth
      ═══════════════════════════════════════════════════════════ */
 
-  /* ─────────── live indicator ─────────── */
+  /**
+   * setStepState — three states for a step:
+   *   'active'  : visible + clickable
+   *   'locked'  : visible + dimmed + not clickable
+   *   'hidden'  : display:none (removed from flow entirely)
+   */
+  function setStepState(node, state) {
+    if (!node) return;
+    node.classList.remove('is-locked', 'is-active');
+    node.style.display = '';
+    node.style.pointerEvents = '';
+
+    if (state === 'hidden') {
+      node.style.display = 'none';
+      return;
+    }
+    if (state === 'locked') {
+      node.classList.add('is-locked');
+      // Belt-and-braces: the class does this in CSS, but explicit is safer.
+      node.style.pointerEvents = 'none';
+      return;
+    }
+    // 'active'
+    node.classList.add('is-active');
+    node.style.pointerEvents = '';
+  }
+
+  /**
+   * refreshSteps — reads the current state and updates every step.
+   * Called after ANY change to role / mode. Never called with stale data.
+   */
+  function refreshSteps() {
+    // ── Step 02 · mode ────────────────────────────────
+    setStepState(modeStep, S.role ? 'active' : 'locked');
+
+    // ── Step 03 · players ─────────────────────────────
+    if (S.role === 'joiner') {
+      // Joiners don't pick a slot count — hide the step entirely.
+      setStepState(el.stepPlayers, 'hidden');
+    } else if (S.role === 'host') {
+      // Hosts see the count grid once they've picked a mode.
+      setStepState(el.stepPlayers, S.mode ? 'active' : 'locked');
+    } else {
+      setStepState(el.stepPlayers, 'locked');
+    }
+
+    // ── Step 04 · code ────────────────────────────────
+    // Needs a mode to be chosen. Works for both roles.
+    setStepState(el.stepCode, S.mode ? 'active' : 'locked');
+
+    // ── Renumber the code step for joiners ────────────
+    if (el.codeStepNum) {
+      el.codeStepNum.textContent = (S.role === 'joiner') ? '03' : '04';
+    }
+
+    // ── Debug log so you can see what's happening ─────
+    console.log('[steps]', { role: S.role, mode: S.mode, needed: S.needed });
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     LIVE INDICATOR + STATS
+     ═══════════════════════════════════════════════════════════ */
 
   function setLive(mode) {
     if (!el.livePill) return;
@@ -158,8 +223,6 @@
       el.liveText.textContent = 'Offline';
     }
   }
-
-  /* ─────────── stats ─────────── */
 
   function renderStats(stats) {
     if (!stats) return;
@@ -188,16 +251,16 @@
     const t = stats._total || { openSlots: 0, waiting: 0 };
     const online = (t.openSlots || 0) + (t.waiting || 0);
     if (S.socketOnline && el.liveText) {
-      el.liveText.textContent = online > 0
-        ? `${online} searching now`
-        : 'Connected';
+      el.liveText.textContent = online > 0 ? `${online} searching now` : 'Connected';
     }
     if (el.footCount) {
       el.footCount.textContent = `${t.parties || 0} open ${t.parties === 1 ? 'party' : 'parties'}`;
     }
   }
 
-  /* ─────────── mode grid (built immediately from fallback) ─────────── */
+  /* ═══════════════════════════════════════════════════════════
+     MODE GRID
+     ═══════════════════════════════════════════════════════════ */
 
   function buildModeGrid() {
     if (!el.modeGrid) return;
@@ -216,57 +279,52 @@
           <span class="mode-badge"><span class="bdot"></span><span class="badge-text">No one searching</span></span>
         </button>`;
     }).join('');
+
+    // Preserve any previously-selected mode highlight
+    if (S.mode) {
+      $$('.mode-card', el.modeGrid).forEach((c) =>
+        c.classList.toggle('selected', c.dataset.mode === S.mode)
+      );
+    }
   }
 
-  /* ─────────── selection flow ─────────── */
+  /* ═══════════════════════════════════════════════════════════
+     SELECTION HANDLERS
+     ═══════════════════════════════════════════════════════════ */
 
   function selectRole(role) {
     S.role = role;
-    $$('.role-card').forEach((c) => c.classList.toggle('selected', c.dataset.role === role));
 
-    const modeStep = $('#panel-setup').querySelector('[data-step="mode"]');
-    if (modeStep) {
-      modeStep.classList.remove('is-locked');
-      modeStep.classList.add('is-active');
-    }
-    if (el.stepCode) {
-      el.stepCode.classList.remove('is-locked');
-      el.stepCode.classList.add('is-active');
-    }
+    // Highlight
+    $$('.role-card').forEach((c) =>
+      c.classList.toggle('selected', c.dataset.role === role)
+    );
 
-    if (role === 'host') {
-      if (el.stepPlayers) {
-        el.stepPlayers.classList.remove('is-locked');
-        el.stepPlayers.classList.add('is-active');
-      }
-      if (el.codeStepNum) el.codeStepNum.textContent = '04';
-    } else {
-      if (el.stepPlayers) {
-        el.stepPlayers.classList.add('is-locked');
-        el.stepPlayers.classList.remove('is-active');
-      }
+    // State adjustments
+    if (role === 'joiner') {
       S.needed = null;
-      if (el.codeStepNum) el.codeStepNum.textContent = '03';
+    } else if (role === 'host') {
+      // If they already picked a mode, rebuild the count grid for it.
+      if (S.mode) buildCountGrid(S.mode);
     }
+
+    refreshSteps();
     audio.click();
     updateSearchBtn();
   }
 
   function selectMode(mode) {
     S.mode = mode;
-    $$('.mode-card').forEach((c) => c.classList.toggle('selected', c.dataset.mode === mode));
 
-    if (el.stepCode) {
-      el.stepCode.classList.remove('is-locked');
-      el.stepCode.classList.add('is-active');
-    }
-    buildCountGrid(mode);
+    // Highlight
+    $$('.mode-card').forEach((c) =>
+      c.classList.toggle('selected', c.dataset.mode === mode)
+    );
 
-    if (S.role === 'host' && el.stepPlayers) {
-      el.stepPlayers.classList.remove('is-locked');
-      el.stepPlayers.classList.add('is-active');
-    }
+    // Build the count grid only for hosts (joiners don't need it).
+    if (S.role === 'host') buildCountGrid(mode);
 
+    refreshSteps();
     audio.click();
     updateSearchBtn();
   }
@@ -285,9 +343,11 @@
       </button>`).join('');
 
     if (el.countHint) {
-      el.countHint.textContent = `You'll be the lobby leader — pick how many open slots to fill (max ${max}).`;
+      el.countHint.textContent =
+        `You'll be the lobby leader — pick how many open slots to fill (max ${max}).`;
     }
 
+    // Auto-select a sensible default (1 player).
     const first = el.countGrid.querySelector('.count-btn');
     if (first) {
       S.needed = parseInt(first.dataset.count, 10);
@@ -311,7 +371,9 @@
     }
   }
 
-  /* ─────────── phase transitions ─────────── */
+  /* ═══════════════════════════════════════════════════════════
+     PHASE TRANSITIONS
+     ═══════════════════════════════════════════════════════════ */
 
   function showPanel(name) {
     Object.entries(panels).forEach(([key, node]) => {
@@ -353,6 +415,7 @@
     if (el.searchBtn) el.searchBtn.disabled = false;
     clearChat('host');
     clearChat('joiner');
+    refreshSteps();
     updateSearchBtn();
     showPanel('setup');
   }
@@ -367,7 +430,9 @@
     el.qTime.textContent = `${mm}:${ss}`;
   }, 500);
 
-  /* ─────────── party rendering ─────────── */
+  /* ═══════════════════════════════════════════════════════════
+     PARTY RENDERING
+     ═══════════════════════════════════════════════════════════ */
 
   function renderParty() {
     const p = S.party;
@@ -443,7 +508,9 @@
     }
   }
 
-  /* ─────────── chat ─────────── */
+  /* ═══════════════════════════════════════════════════════════
+     CHAT
+     ═══════════════════════════════════════════════════════════ */
 
   const chatLogs   = { host: el.hostChatLog, joiner: el.joinerChatLog };
   const chatCounts = { host: el.hostChatCount, joiner: el.joinerChatCount };
@@ -480,7 +547,9 @@
     renderChat(key);
   }
 
-  /* ─────────── utilities ─────────── */
+  /* ═══════════════════════════════════════════════════════════
+     UTILITIES
+     ═══════════════════════════════════════════════════════════ */
 
   function escapeHtml(str) {
     return String(str == null ? '' : str)
@@ -512,18 +581,17 @@
   }
 
   /* ═══════════════════════════════════════════════════════════
-     ATTACH ALL UI EVENT LISTENERS NOW (before socket)
+     ATTACH UI LISTENERS (before socket)
      ═══════════════════════════════════════════════════════════ */
 
-  // Build the mode grid immediately so cards exist even if socket dies.
   buildModeGrid();
 
-  // Role card clicks
+  // Role cards
   $$('.role-card').forEach((card) => {
     card.addEventListener('click', () => selectRole(card.dataset.role));
   });
 
-  // Mode card clicks (delegated)
+  // Mode cards (delegated)
   if (el.modeGrid) {
     el.modeGrid.addEventListener('click', (e) => {
       const card = e.target.closest('.mode-card');
@@ -532,13 +600,15 @@
     });
   }
 
-  // Count card clicks (delegated — grid is rebuilt dynamically)
+  // Count buttons (delegated — grid is rebuilt)
   if (el.countGrid) {
     el.countGrid.addEventListener('click', (e) => {
       const btn = e.target.closest('.count-btn');
       if (!btn) return;
       S.needed = parseInt(btn.dataset.count, 10);
-      $$('.count-btn', el.countGrid).forEach((b) => b.classList.toggle('selected', b === btn));
+      $$('.count-btn', el.countGrid).forEach((b) =>
+        b.classList.toggle('selected', b === btn)
+      );
       audio.click();
       updateSearchBtn();
     });
@@ -569,7 +639,7 @@
     });
   }
 
-  // Copy buttons (delegated)
+  // Copy buttons
   document.addEventListener('click', async (e) => {
     const btn = e.target.closest('.copy-btn');
     if (!btn) return;
@@ -605,21 +675,19 @@
     });
   });
 
-  // Cancel / reset buttons
-  if (el.cancelBtn)     el.cancelBtn.addEventListener('click', () => { audio.click(); doCancel(); });
-  if (el.hostCancel)    el.hostCancel.addEventListener('click', () => { audio.click(); doCancel(); });
-  if (el.joinerAgain)   el.joinerAgain.addEventListener('click', () => { audio.click(); doCancel(); });
+  // Cancel / reset
+  if (el.cancelBtn)   el.cancelBtn.addEventListener('click', () => { audio.click(); doCancel(); });
+  if (el.hostCancel)  el.hostCancel.addEventListener('click', () => { audio.click(); doCancel(); });
+  if (el.joinerAgain) el.joinerAgain.addEventListener('click', () => { audio.click(); doCancel(); });
 
-  // Search button
-  if (el.searchBtn) {
-    el.searchBtn.addEventListener('click', submitSearch);
-  }
+  // Search
+  if (el.searchBtn) el.searchBtn.addEventListener('click', submitSearch);
 
   // Initial chat placeholders
   renderChat('host');
   renderChat('joiner');
 
-  // Local storage for the code field
+  // Code local storage
   const STORE_KEY = 'cs2-hvh-code';
   function saveCode() {
     try { localStorage.setItem(STORE_KEY, S.code); } catch { /* noop */ }
@@ -637,7 +705,7 @@
   restoreCode();
 
   /* ═══════════════════════════════════════════════════════════
-     SEARCH SUBMIT (works whether or not socket is online)
+     SEARCH SUBMIT
      ═══════════════════════════════════════════════════════════ */
 
   function submitSearch() {
@@ -713,8 +781,7 @@
   }
 
   /* ═══════════════════════════════════════════════════════════
-     SOCKET LAYER — attached last, wrapped so a failure never
-     breaks the UI above.
+     SOCKET LAYER
      ═══════════════════════════════════════════════════════════ */
 
   let socket = null;
@@ -763,7 +830,7 @@
       S.callsign = data.callsign;
       if (data.modes) {
         S.modes = data.modes;
-        buildModeGrid();  // rebuild with authoritative modes
+        buildModeGrid();
       }
       renderStats(data.stats);
     });
@@ -811,6 +878,7 @@
      BOOT
      ═══════════════════════════════════════════════════════════ */
 
+  refreshSteps();
   updateSearchBtn();
   setLive('offline');
 
