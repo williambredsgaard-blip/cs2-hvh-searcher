@@ -54,21 +54,8 @@
           <span class="step-title">Choose your side</span>
         </div>
         <div class="role-grid">
-          <button class="role-card" data-role="host" type="button">
-            <span class="role-glow"></span>
-            <span class="role-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6l7-3z"/>
-                <path d="M12 9v6M9 12h6"/>
-              </svg>
-            </span>
-            <span class="role-name">I need teammates</span>
-            <span class="role-desc">You own the lobby and need players to fill it.</span>
-            <span class="role-check">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-            </span>
-          </button>
 
+          <!-- Searching for lobby (joiner) — LEFT -->
           <button class="role-card" data-role="joiner" type="button">
             <span class="role-glow"></span>
             <span class="role-icon">
@@ -78,12 +65,29 @@
                 <path d="M19 5v5M16.5 7.5h5"/>
               </svg>
             </span>
-            <span class="role-name">I'm looking for a team</span>
+            <span class="role-name">Searching for lobby</span>
             <span class="role-desc">You're solo and want to join someone's lobby.</span>
             <span class="role-check">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
             </span>
           </button>
+
+          <!-- Searching for teammates (host) — RIGHT -->
+          <button class="role-card" data-role="host" type="button">
+            <span class="role-glow"></span>
+            <span class="role-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6l7-3z"/>
+                <path d="M12 9v6M9 12h6"/>
+              </svg>
+            </span>
+            <span class="role-name">Searching for teammates</span>
+            <span class="role-desc">You own the lobby and need players to fill it.</span>
+            <span class="role-check">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            </span>
+          </button>
+
         </div>
       </div>
 
@@ -96,7 +100,7 @@
         <div class="mode-grid" id="modeGrid"></div>
       </div>
 
-      <!-- step 3 · players -->
+      <!-- step 3 · players (host only — hidden for joiners) -->
       <div class="step is-locked" data-step="players" id="stepPlayers">
         <div class="step-head">
           <span class="step-num">03</span>
@@ -106,7 +110,7 @@
         <p class="step-hint" id="countHint">Select how many open slots to fill.</p>
       </div>
 
-      <!-- step 4 · code -->
+      <!-- step 4 · code (becomes 03 for joiners) -->
       <div class="step is-locked" data-step="code" id="stepCode">
         <div class="step-head">
           <span class="step-num" id="codeStepNum">04</span>
