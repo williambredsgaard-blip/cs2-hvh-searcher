@@ -33,12 +33,6 @@
       try { this.ctx = new AC(); } catch { /* noop */ }
     },
 
-    /**
-     * Called on every user interaction. Mobile browsers
-     * (especially iOS Safari) require resume() inside a
-     * user-gesture handler, and it can fail silently the
-     * first few times — so we just keep trying.
-     */
     unlock() {
       this.init();
       if (!this.ctx) return;
@@ -46,7 +40,6 @@
         this.ctx.resume().then(() => {
           if (!this.unlocked) {
             this.unlocked = true;
-            // Prime the pipeline with a silent blip.
             this.tone(1, 0.01, 'sine', 0.0001);
           }
         }).catch(() => {});
@@ -55,7 +48,6 @@
       }
     },
 
-    /** Low-level tone generator. Auto-resumes if needed. */
     tone(freq, dur = .09, type = 'sine', gain = .045, delay = 0) {
       if (!this.ctx) return;
       const c = this.ctx;
@@ -75,17 +67,9 @@
       osc.stop(t0 + dur + .05);
     },
 
-    /* ── small UI sounds ─────────────────────────────── */
     click() { this.tone(520, .05, 'square', .022); },
     error() { this.tone(170, .17, 'sawtooth', .032); },
 
-    /* ── the big one ─────────────────────────────────── */
-    /**
-     * Distinctive 4-note ascending chime (C5 – E5 – G5 – C6).
-     * Long enough and loud enough to be heard even on
-     * a phone at low volume. Played for BOTH the host and
-     * the joiner the moment a real match happens.
-     */
     match() {
       this.tone(523,  .14, 'triangle', .07, 0.00); // C5
       this.tone(659,  .14, 'triangle', .07, 0.14); // E5
@@ -94,30 +78,21 @@
     },
   };
 
-  /**
-   * Play the match chime + vibrate. Safe to call outside a user
-   * gesture as long as the AudioContext has already been unlocked
-   * by an earlier tap.
-   */
   function playMatchSound() {
-    audio.unlock();          // best-effort resume
-    audio.match();           // the chime
+    audio.unlock();
+    audio.match();
 
     if (navigator.vibrate) {
-      // 3 short pulses — feels like a notification.
       try { navigator.vibrate([90, 60, 90, 60, 160]); } catch { /* noop */ }
     }
   }
 
-  /* Unlock audio on ANY first user interaction.
-     Cheap and idempotent, so we attach it to many events. */
   function unlockAudioHandler() { audio.unlock(); }
   ['touchstart', 'touchend', 'pointerdown', 'mousedown', 'keydown', 'click']
     .forEach((evt) => {
       document.addEventListener(evt, unlockAudioHandler, { passive: true });
     });
 
-  /* If the tab goes to background and comes back, re-resume. */
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) audio.unlock();
   });
@@ -171,10 +146,7 @@
     everConnected: false,
     hadPartyBeforeDrop: false,
     socketOnline: false,
-    /** Highest member count we've seen for the current party.
-     *  Used to detect "new joiner arrived" vs "same party update". */
     lastMemberCount: -1,
-    /** True once we've played the match chime for this party. */
     matchChimePlayed: false,
   };
 
@@ -234,19 +206,28 @@
 
   function setStepState(node, state) {
     if (!node) return;
-    node.classList.remove('is-locked', 'is-active');
+
+    // Reset every possible state class + inline override first.
+    node.classList.remove('is-locked', 'is-active', 'hidden');
     node.style.display = '';
     node.style.pointerEvents = '';
 
     if (state === 'hidden') {
+      // .hidden { display: none !important; } — wins over everything.
+      node.classList.add('hidden');
       node.style.display = 'none';
+      node.setAttribute('aria-hidden', 'true');
       return;
     }
+
+    node.removeAttribute('aria-hidden');
+
     if (state === 'locked') {
       node.classList.add('is-locked');
       node.style.pointerEvents = 'none';
       return;
     }
+
     node.classList.add('is-active');
   }
 
@@ -254,9 +235,11 @@
     setStepState(modeStep, S.role ? 'active' : 'locked');
 
     if (S.role === 'joiner') {
-      // Joiners don't choose a player count — the host already did.
+      // Joiners never pick a player count — the host already did.
       setStepState(el.stepPlayers, 'hidden');
-    } else if (S.role && S.mode) {
+      if (el.countGrid) el.countGrid.innerHTML = '';
+      S.needed = null;
+    } else if (S.role === 'host' && S.mode) {
       setStepState(el.stepPlayers, 'active');
     } else {
       setStepState(el.stepPlayers, 'locked');
@@ -756,7 +739,7 @@
      ═══════════════════════════════════════════════════════════ */
 
   function submitSearch() {
-    audio.unlock();                // unlock inside the user gesture
+    audio.unlock();
     if (el.formError) el.formError.textContent = '';
     if (el.codeInput) el.codeInput.classList.remove('invalid');
 
@@ -777,7 +760,6 @@
     el.searchBtn.disabled = true;
     audio.click();
 
-    // Reset match-tracking flags so the NEXT party:update can be the first match.
     S.lastMemberCount = -1;
     S.matchChimePlayed = false;
 
@@ -791,7 +773,6 @@
             audio.error();
             return;
           }
-          // Mark this as our own creation — the initial member count is 0.
           S.lastMemberCount = 0;
           S.party = res.party;
           goMatched();
@@ -812,12 +793,10 @@
             S.startedAt = Date.now();
             goSearching();
           } else {
-            // Instant match — we joined an existing party.
             S.party = res.party;
             S.lastMemberCount = res.party.members.length;
             goMatched();
             renderParty();
-            // Play chime now (outside the normal party:update path).
             if (!S.matchChimePlayed) {
               S.matchChimePlayed = true;
               playMatchSound();
@@ -903,18 +882,6 @@
       S.startedAt = info.since || Date.now();
     });
 
-    /* ───────────────────────────────────────────────────
-       PARTY UPDATE — this is where the match chime fires.
-       Rules:
-         • Host : chime plays only when a NEW joiner appears
-                  (member count grows past the previous count).
-         • Joiner: chime plays the first time they enter the
-                  matched phase.
-       The `matchChimePlayed` flag guarantees we never
-       double-play within a single match, and `lastMemberCount`
-       guarantees the host doesn't hear the chime for their
-       own party creation.
-       ─────────────────────────────────────────────────── */
     socket.on('party:update', (party) => {
       const prevCount  = S.lastMemberCount;
       const newCount   = party.members.length;
@@ -927,10 +894,8 @@
       let shouldPlay = false;
 
       if (S.role === 'joiner') {
-        // Joiner enters matched for the first time → chime.
         if (!wasMatched && !S.matchChimePlayed) shouldPlay = true;
       } else if (S.role === 'host') {
-        // Host: only when member count actually increased and there's at least one member.
         if (newCount > 0 && newCount > prevCount && !S.matchChimePlayed) {
           shouldPlay = true;
         }
@@ -947,17 +912,11 @@
       S.lastMemberCount = newCount;
     });
 
-    /* ───────────────────────────────────────────────────
-       PARTY FULL — no sound here. The chime already fired in
-       party:update when the last joiner arrived. We only show
-       a success toast for the host.
-       ─────────────────────────────────────────────────── */
     socket.on('party:full', (party) => {
       S.party = party;
       renderParty();
       if (S.role === 'host') {
         toast('Party full — invite everyone!', 'success', 6000);
-        // Optional: a subtle confirm blip, distinct from the match chime.
         audio.tone(880, .1, 'sine', .03);
         audio.tone(1320, .16, 'sine', .03, .1);
       }
