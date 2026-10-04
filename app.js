@@ -1,6 +1,9 @@
 /* ═══════════════════════════════════════════════════════════════
    CS2 HVH TEAM FINDER — client
-   Players-count step is now available to BOTH roles.
+   Match sound is now:
+     • Unlocked on first user interaction (iOS/Android requirement)
+     • Played exactly ONCE per real match for BOTH sides
+     • Backed up by vibration on mobile
    ═══════════════════════════════════════════════════════════════ */
 
 (() => {
@@ -15,34 +18,113 @@
     competitive: { label: 'Competitive', teamSize: 5, blurb: 'Classic 5v5' },
   };
 
+  /* ═══════════════════════════════════════════════════════════
+     AUDIO ENGINE
+     ═══════════════════════════════════════════════════════════ */
+
   const audio = {
-    ctx: null, ready: false,
+    ctx: null,
+    unlocked: false,
+
     init() {
       if (this.ctx) return;
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;
-      try { this.ctx = new AC(); this.ready = true; } catch { /* noop */ }
+      try { this.ctx = new AC(); } catch { /* noop */ }
     },
+
+    /**
+     * Called on every user interaction. Mobile browsers
+     * (especially iOS Safari) require resume() inside a
+     * user-gesture handler, and it can fail silently the
+     * first few times — so we just keep trying.
+     */
+    unlock() {
+      this.init();
+      if (!this.ctx) return;
+      if (this.ctx.state === 'suspended') {
+        this.ctx.resume().then(() => {
+          if (!this.unlocked) {
+            this.unlocked = true;
+            // Prime the pipeline with a silent blip.
+            this.tone(1, 0.01, 'sine', 0.0001);
+          }
+        }).catch(() => {});
+      } else {
+        this.unlocked = true;
+      }
+    },
+
+    /** Low-level tone generator. Auto-resumes if needed. */
     tone(freq, dur = .09, type = 'sine', gain = .045, delay = 0) {
-      if (!this.ready || !this.ctx) return;
+      if (!this.ctx) return;
       const c = this.ctx;
       if (c.state === 'suspended') c.resume().catch(() => {});
+
       const t0 = c.currentTime + delay;
       const osc = c.createOscillator();
       const g = c.createGain();
+
       osc.type = type;
       osc.frequency.setValueAtTime(freq, t0);
       g.gain.setValueAtTime(0.0001, t0);
-      g.gain.linearRampToValueAtTime(gain, t0 + 0.012);
+      g.gain.linearRampToValueAtTime(gain, t0 + 0.015);
       g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
       osc.connect(g).connect(c.destination);
       osc.start(t0);
-      osc.stop(t0 + dur + .03);
+      osc.stop(t0 + dur + .05);
     },
+
+    /* ── small UI sounds ─────────────────────────────── */
     click() { this.tone(520, .05, 'square', .022); },
-    match() { this.tone(600, .1, 'triangle', .05); this.tone(880, .1, 'triangle', .05, .1); this.tone(1180, .18, 'triangle', .045, .2); },
     error() { this.tone(170, .17, 'sawtooth', .032); },
+
+    /* ── the big one ─────────────────────────────────── */
+    /**
+     * Distinctive 4-note ascending chime (C5 – E5 – G5 – C6).
+     * Long enough and loud enough to be heard even on
+     * a phone at low volume. Played for BOTH the host and
+     * the joiner the moment a real match happens.
+     */
+    match() {
+      this.tone(523,  .14, 'triangle', .07, 0.00); // C5
+      this.tone(659,  .14, 'triangle', .07, 0.14); // E5
+      this.tone(784,  .14, 'triangle', .07, 0.28); // G5
+      this.tone(1046, .34, 'triangle', .07, 0.42); // C6
+    },
   };
+
+  /**
+   * Play the match chime + vibrate. Safe to call outside a user
+   * gesture as long as the AudioContext has already been unlocked
+   * by an earlier tap.
+   */
+  function playMatchSound() {
+    audio.unlock();          // best-effort resume
+    audio.match();           // the chime
+
+    if (navigator.vibrate) {
+      // 3 short pulses — feels like a notification.
+      try { navigator.vibrate([90, 60, 90, 60, 160]); } catch { /* noop */ }
+    }
+  }
+
+  /* Unlock audio on ANY first user interaction.
+     Cheap and idempotent, so we attach it to many events. */
+  function unlockAudioHandler() { audio.unlock(); }
+  ['touchstart', 'touchend', 'pointerdown', 'mousedown', 'keydown', 'click']
+    .forEach((evt) => {
+      document.addEventListener(evt, unlockAudioHandler, { passive: true });
+    });
+
+  /* If the tab goes to background and comes back, re-resume. */
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) audio.unlock();
+  });
+
+  /* ═══════════════════════════════════════════════════════════
+     TOASTS
+     ═══════════════════════════════════════════════════════════ */
 
   const toastBox = $('#toasts');
   function toast(text, kind = 'info', ms = 4200) {
@@ -57,6 +139,10 @@
     }, ms);
   }
 
+  /* ═══════════════════════════════════════════════════════════
+     ICONS
+     ═══════════════════════════════════════════════════════════ */
+
   const MODE_ICONS = {
     premier: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6l7-3z"/><path d="M12 8.6l1.25 2.6 2.85.4-2.05 2 .48 2.85L12 15.1l-2.53 1.35.48-2.85-2.05-2 2.85-.4L12 8.6z"/></svg>`,
     wingman: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.3"/><path d="M2.9 19.6a6.15 6.15 0 0112.2 0"/><circle cx="17.6" cy="9.4" r="2.55"/><path d="M15.3 19.6a5.6 5.6 0 016.8-5.05"/></svg>`,
@@ -65,6 +151,10 @@
 
   const COPY_ICON  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 012-2h9"/></svg>`;
   const CHECK_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`;
+
+  /* ═══════════════════════════════════════════════════════════
+     STATE
+     ═══════════════════════════════════════════════════════════ */
 
   const S = {
     id: null,
@@ -81,6 +171,11 @@
     everConnected: false,
     hadPartyBeforeDrop: false,
     socketOnline: false,
+    /** Highest member count we've seen for the current party.
+     *  Used to detect "new joiner arrived" vs "same party update". */
+    lastMemberCount: -1,
+    /** True once we've played the match chime for this party. */
+    matchChimePlayed: false,
   };
 
   const panels = {
@@ -156,20 +251,13 @@
   }
 
   function refreshSteps() {
-    // 02 · mode — needs a role
     setStepState(modeStep, S.role ? 'active' : 'locked');
 
-    // 03 · players — needs role + mode, available to BOTH roles
-    if (S.role && S.mode) {
-      setStepState(el.stepPlayers, 'active');
-    } else {
-      setStepState(el.stepPlayers, 'locked');
-    }
+    if (S.role && S.mode) setStepState(el.stepPlayers, 'active');
+    else                  setStepState(el.stepPlayers, 'locked');
 
-    // 04 · code — needs a mode
     setStepState(el.stepCode, S.mode ? 'active' : 'locked');
 
-    // Retitle the players step based on role
     if (el.stepPlayers) {
       const title = el.stepPlayers.querySelector('.step-title');
       if (title) {
@@ -179,7 +267,6 @@
       }
     }
 
-    // Code step is always 04 now
     if (el.codeStepNum) el.codeStepNum.textContent = '04';
   }
 
@@ -263,7 +350,7 @@
   }
 
   /* ═══════════════════════════════════════════════════════════
-     SELECTION HANDLERS
+     SELECTION
      ═══════════════════════════════════════════════════════════ */
 
   function selectRole(role) {
@@ -294,8 +381,6 @@
     const max = Math.max(1, teamSize - 1);
     const options = [];
     for (let n = 1; n <= max; n++) options.push(n);
-
-    // Remember previous selection if still valid
     const prev = S.needed;
 
     el.countGrid.innerHTML = options.map((n) => `
@@ -310,7 +395,6 @@
         : `You'll be the lobby leader — pick how many open slots to fill (max ${max}).`;
     }
 
-    // Restore previous selection if possible, otherwise pick first
     let target = null;
     if (prev && options.includes(prev)) {
       target = el.countGrid.querySelector(`.count-btn[data-count="${prev}"]`);
@@ -327,7 +411,6 @@
     if (!el.searchBtn) return;
     const codeOk = S.code.length >= 3 && !/\s/.test(S.code);
     const ok = !!(S.role && S.mode && S.needed && codeOk);
-
     el.searchBtn.disabled = !ok;
     const label = el.searchBtn.querySelector('.btn-label');
     if (label) {
@@ -376,6 +459,8 @@
     S.phase = 'setup';
     S.party = null;
     S.startedAt = 0;
+    S.lastMemberCount = -1;
+    S.matchChimePlayed = false;
     if (el.searchBtn) el.searchBtn.disabled = false;
     clearChat('host');
     clearChat('joiner');
@@ -508,6 +593,10 @@
     chatStore[key] = [];
     renderChat(key);
   }
+
+  /* ═══════════════════════════════════════════════════════════
+     UTILITIES
+     ═══════════════════════════════════════════════════════════ */
 
   function escapeHtml(str) {
     return String(str == null ? '' : str)
@@ -656,7 +745,7 @@
      ═══════════════════════════════════════════════════════════ */
 
   function submitSearch() {
-    audio.init();
+    audio.unlock();                // unlock inside the user gesture
     if (el.formError) el.formError.textContent = '';
     if (el.codeInput) el.codeInput.classList.remove('invalid');
 
@@ -677,6 +766,10 @@
     el.searchBtn.disabled = true;
     audio.click();
 
+    // Reset match-tracking flags so the NEXT party:update can be the first match.
+    S.lastMemberCount = -1;
+    S.matchChimePlayed = false;
+
     if (S.role === 'host') {
       socket.emit('search:host',
         { mode: S.mode, needed: S.needed, code: S.code },
@@ -687,6 +780,8 @@
             audio.error();
             return;
           }
+          // Mark this as our own creation — the initial member count is 0.
+          S.lastMemberCount = 0;
           S.party = res.party;
           goMatched();
           renderParty();
@@ -705,9 +800,16 @@
             S.startedAt = Date.now();
             goSearching();
           } else {
+            // Instant match — we joined an existing party.
             S.party = res.party;
+            S.lastMemberCount = res.party.members.length;
             goMatched();
             renderParty();
+            // Play chime now (outside the normal party:update path).
+            if (!S.matchChimePlayed) {
+              S.matchChimePlayed = true;
+              playMatchSound();
+            }
           }
         });
     }
@@ -789,23 +891,71 @@
       S.startedAt = info.since || Date.now();
     });
 
+    /* ───────────────────────────────────────────────────
+       PARTY UPDATE — this is where the match chime fires.
+       Rules:
+         • Host : chime plays only when a NEW joiner appears
+                  (member count grows past the previous count).
+         • Joiner: chime plays the first time they enter the
+                  matched phase.
+       The `matchChimePlayed` flag guarantees we never
+       double-play within a single match, and `lastMemberCount`
+       guarantees the host doesn't hear the chime for their
+       own party creation.
+       ─────────────────────────────────────────────────── */
     socket.on('party:update', (party) => {
+      const prevCount  = S.lastMemberCount;
+      const newCount   = party.members.length;
+      const wasMatched = S.phase === 'matched';
+
       S.party = party;
-      if (S.phase !== 'matched') audio.match();
       goMatched();
       renderParty();
+
+      let shouldPlay = false;
+
+      if (S.role === 'joiner') {
+        // Joiner enters matched for the first time → chime.
+        if (!wasMatched && !S.matchChimePlayed) shouldPlay = true;
+      } else if (S.role === 'host') {
+        // Host: only when member count actually increased and there's at least one member.
+        if (newCount > 0 && newCount > prevCount && !S.matchChimePlayed) {
+          shouldPlay = true;
+        }
+      }
+
+      if (shouldPlay) {
+        S.matchChimePlayed = true;
+        playMatchSound();
+        if (S.role === 'host') {
+          toast(`New player joined! (${newCount}/${party.needed})`, 'success', 5000);
+        }
+      }
+
+      S.lastMemberCount = newCount;
     });
 
+    /* ───────────────────────────────────────────────────
+       PARTY FULL — no sound here. The chime already fired in
+       party:update when the last joiner arrived. We only show
+       a success toast for the host.
+       ─────────────────────────────────────────────────── */
     socket.on('party:full', (party) => {
       S.party = party;
       renderParty();
-      audio.match();
-      if (S.role === 'host') toast('Party full — invite everyone!', 'success', 6000);
+      if (S.role === 'host') {
+        toast('Party full — invite everyone!', 'success', 6000);
+        // Optional: a subtle confirm blip, distinct from the match chime.
+        audio.tone(880, .1, 'sine', .03);
+        audio.tone(1320, .16, 'sine', .03, .1);
+      }
     });
 
     socket.on('party:closed', ({ reason }) => {
       S.party = null;
       S.phase = 'setup';
+      S.lastMemberCount = -1;
+      S.matchChimePlayed = false;
       const messages = {
         host_left: 'The lobby leader disconnected.',
         host_cancelled: 'The lobby leader closed the party.',
