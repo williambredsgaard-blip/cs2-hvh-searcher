@@ -1,9 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
    CS2 HVH TEAM FINDER — client
-   Match sound is now:
-     • Unlocked on first user interaction (iOS/Android requirement)
-     • Played exactly ONCE per real match for BOTH sides
-     • Backed up by vibration on mobile
    ═══════════════════════════════════════════════════════════════ */
 
 (() => {
@@ -18,9 +14,7 @@
     competitive: { label: 'Competitive', teamSize: 5, blurb: 'Classic 5v5' },
   };
 
-  /* ═══════════════════════════════════════════════════════════
-     AUDIO ENGINE
-     ═══════════════════════════════════════════════════════════ */
+  /* ─── AUDIO ────────────────────────────────────────────── */
 
   const audio = {
     ctx: null,
@@ -71,17 +65,16 @@
     error() { this.tone(170, .17, 'sawtooth', .032); },
 
     match() {
-      this.tone(523,  .14, 'triangle', .07, 0.00); // C5
-      this.tone(659,  .14, 'triangle', .07, 0.14); // E5
-      this.tone(784,  .14, 'triangle', .07, 0.28); // G5
-      this.tone(1046, .34, 'triangle', .07, 0.42); // C6
+      this.tone(523,  .14, 'triangle', .07, 0.00);
+      this.tone(659,  .14, 'triangle', .07, 0.14);
+      this.tone(784,  .14, 'triangle', .07, 0.28);
+      this.tone(1046, .34, 'triangle', .07, 0.42);
     },
   };
 
   function playMatchSound() {
     audio.unlock();
     audio.match();
-
     if (navigator.vibrate) {
       try { navigator.vibrate([90, 60, 90, 60, 160]); } catch { /* noop */ }
     }
@@ -97,9 +90,7 @@
     if (!document.hidden) audio.unlock();
   });
 
-  /* ═══════════════════════════════════════════════════════════
-     TOASTS
-     ═══════════════════════════════════════════════════════════ */
+  /* ─── TOASTS ───────────────────────────────────────────── */
 
   const toastBox = $('#toasts');
   function toast(text, kind = 'info', ms = 4200) {
@@ -114,9 +105,7 @@
     }, ms);
   }
 
-  /* ═══════════════════════════════════════════════════════════
-     ICONS
-     ═══════════════════════════════════════════════════════════ */
+  /* ─── ICONS ────────────────────────────────────────────── */
 
   const MODE_ICONS = {
     premier: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6l7-3z"/><path d="M12 8.6l1.25 2.6 2.85.4-2.05 2 .48 2.85L12 15.1l-2.53 1.35.48-2.85-2.05-2 2.85-.4L12 8.6z"/></svg>`,
@@ -127,9 +116,7 @@
   const COPY_ICON  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 012-2h9"/></svg>`;
   const CHECK_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`;
 
-  /* ═══════════════════════════════════════════════════════════
-     STATE
-     ═══════════════════════════════════════════════════════════ */
+  /* ─── STATE ────────────────────────────────────────────── */
 
   const S = {
     id: null,
@@ -200,20 +187,16 @@
     joinerAgain:    $('#joinerAgain'),
   };
 
-  /* ═══════════════════════════════════════════════════════════
-     STEP VISIBILITY
-     ═══════════════════════════════════════════════════════════ */
+  /* ─── STEP VISIBILITY ──────────────────────────────────── */
 
   function setStepState(node, state) {
     if (!node) return;
 
-    // Reset every possible state class + inline override first.
     node.classList.remove('is-locked', 'is-active', 'hidden');
     node.style.display = '';
     node.style.pointerEvents = '';
 
     if (state === 'hidden') {
-      // .hidden { display: none !important; } — wins over everything.
       node.classList.add('hidden');
       node.style.display = 'none';
       node.setAttribute('aria-hidden', 'true');
@@ -235,7 +218,6 @@
     setStepState(modeStep, S.role ? 'active' : 'locked');
 
     if (S.role === 'joiner') {
-      // Joiners never pick a player count — the host already did.
       setStepState(el.stepPlayers, 'hidden');
       if (el.countGrid) el.countGrid.innerHTML = '';
       S.needed = null;
@@ -252,13 +234,10 @@
       if (title) title.textContent = 'How many players do you need?';
     }
 
-    // Code step is 03 for joiners (no player-count step), 04 for hosts.
     if (el.codeStepNum) el.codeStepNum.textContent = S.role === 'joiner' ? '03' : '04';
   }
 
-  /* ═══════════════════════════════════════════════════════════
-     LIVE INDICATOR + STATS
-     ═══════════════════════════════════════════════════════════ */
+  /* ─── LIVE + STATS ─────────────────────────────────────── */
 
   function setLive(mode) {
     if (!el.livePill) return;
@@ -306,9 +285,7 @@
     }
   }
 
-  /* ═══════════════════════════════════════════════════════════
-     MODE GRID
-     ═══════════════════════════════════════════════════════════ */
+  /* ─── MODE GRID ────────────────────────────────────────── */
 
   function buildModeGrid() {
     if (!el.modeGrid) return;
@@ -335,18 +312,17 @@
     }
   }
 
-  /* ═══════════════════════════════════════════════════════════
-     SELECTION
-     ═══════════════════════════════════════════════════════════ */
+  /* ─── SELECTION ────────────────────────────────────────── */
 
   function selectRole(role) {
     S.role = role;
+    if (setupPanel) setupPanel.dataset.role = role;
+
     $$('.role-card').forEach((c) =>
       c.classList.toggle('selected', c.dataset.role === role)
     );
 
     if (role === 'joiner') {
-      // Joiners have no player-count preference.
       S.needed = null;
     } else if (S.mode) {
       buildCountGrid(S.mode);
@@ -412,9 +388,7 @@
     }
   }
 
-  /* ═══════════════════════════════════════════════════════════
-     PHASE TRANSITIONS
-     ═══════════════════════════════════════════════════════════ */
+  /* ─── PHASE TRANSITIONS ────────────────────────────────── */
 
   function showPanel(name) {
     Object.entries(panels).forEach(([key, node]) => {
@@ -471,9 +445,7 @@
     el.qTime.textContent = `${mm}:${ss}`;
   }, 500);
 
-  /* ═══════════════════════════════════════════════════════════
-     PARTY RENDERING
-     ═══════════════════════════════════════════════════════════ */
+  /* ─── PARTY RENDERING ──────────────────────────────────── */
 
   function renderParty() {
     const p = S.party;
@@ -549,9 +521,7 @@
     }
   }
 
-  /* ═══════════════════════════════════════════════════════════
-     CHAT
-     ═══════════════════════════════════════════════════════════ */
+  /* ─── CHAT ─────────────────────────────────────────────── */
 
   const chatLogs   = { host: el.hostChatLog, joiner: el.joinerChatLog };
   const chatCounts = { host: el.hostChatCount, joiner: el.joinerChatCount };
@@ -588,9 +558,7 @@
     renderChat(key);
   }
 
-  /* ═══════════════════════════════════════════════════════════
-     UTILITIES
-     ═══════════════════════════════════════════════════════════ */
+  /* ─── UTILITIES ────────────────────────────────────────── */
 
   function escapeHtml(str) {
     return String(str == null ? '' : str)
@@ -621,9 +589,7 @@
     } catch { return false; }
   }
 
-  /* ═══════════════════════════════════════════════════════════
-     EVENT LISTENERS
-     ═══════════════════════════════════════════════════════════ */
+  /* ─── EVENT LISTENERS ──────────────────────────────────── */
 
   buildModeGrid();
 
@@ -734,9 +700,7 @@
   }
   restoreCode();
 
-  /* ═══════════════════════════════════════════════════════════
-     SEARCH SUBMIT
-     ═══════════════════════════════════════════════════════════ */
+  /* ─── SEARCH SUBMIT ────────────────────────────────────── */
 
   function submitSearch() {
     audio.unlock();
@@ -779,7 +743,6 @@
           renderParty();
         });
     } else {
-      // Joiners take any open lobby in their chosen mode — no `needed` sent.
       socket.emit('search:join',
         { mode: S.mode, code: S.code },
         (res) => {
@@ -820,9 +783,7 @@
     }
   }
 
-  /* ═══════════════════════════════════════════════════════════
-     SOCKET
-     ═══════════════════════════════════════════════════════════ */
+  /* ─── SOCKET ───────────────────────────────────────────── */
 
   let socket = null;
 
@@ -942,9 +903,7 @@
     });
   })();
 
-  /* ═══════════════════════════════════════════════════════════
-     BOOT
-     ═══════════════════════════════════════════════════════════ */
+  /* ─── BOOT ─────────────────────────────────────────────── */
 
   refreshSteps();
   updateSearchBtn();
