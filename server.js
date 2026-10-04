@@ -1,11 +1,5 @@
 'use strict';
 
-/* ═══════════════════════════════════════════════════════════════
-   CS2 HVH TEAM FINDER — real-time matchmaking server
-   Express + Socket.IO · in-memory queue · zero database
-   (Flat layout: static files served from repo root)
-   ═══════════════════════════════════════════════════════════════ */
-
 const path = require('path');
 const http = require('http');
 const express = require('express');
@@ -23,19 +17,14 @@ const io = new Server(server, {
   pingInterval: 20000,
 });
 
-/* Serve static files (index.html, style.css, app.js) from the repo root.
-   `index: 'index.html'` makes `/` return index.html automatically. */
 app.use(express.static(__dirname, { index: 'index.html', maxAge: '1h' }));
-
-/* Block source/config files from being served as static assets. */
 app.get(
   ['/server.js', '/package.json', '/package-lock.json', '/render.yaml'],
   (_req, res) => res.sendStatus(404)
 );
-
 app.get('/health', (_req, res) => res.json({ ok: true, uptime: process.uptime() }));
 
-/* ───────────────── config ───────────────── */
+/* ─────────── config ─────────── */
 
 const MODES = {
   premier:     { label: 'Premier',     teamSize: 5, blurb: 'Ranked 5v5' },
@@ -55,15 +44,15 @@ const CALLSIGNS = [
   'VECTOR','WRAITH','ZENITH','APEX','BLITZ','COBRA','DELTA','EMBER','FLINT',
 ];
 
-/* ───────────────── state ───────────────── */
+/* ─────────── state ─────────── */
 
-const parties = new Map();   // partyId -> Party
-const waiting = new Map();   // socketId -> WaitingEntry
+const parties = new Map();
+const waiting = new Map();
 
 let partySeq = 0;
 let msgSeq = 0;
 
-/* ───────────────── helpers ───────────────── */
+/* ─────────── helpers ─────────── */
 
 const rand = (n) => Math.floor(Math.random() * n);
 const makeCallsign = () =>
@@ -99,14 +88,26 @@ function publicParty(p) {
   };
 }
 
-function findOpenParty(mode) {
-  let best = null;
+/**
+ * Find the best open party for a given mode.
+ * If `preferredNeeded` is provided, exact matches are preferred.
+ * Falls back to oldest open party of that mode.
+ */
+function findOpenParty(mode, preferredNeeded) {
+  let bestExact = null;
+  let bestAny = null;
+
   for (const p of parties.values()) {
     if (p.mode !== mode) continue;
     if (slotsLeft(p) <= 0) continue;
-    if (!best || p.createdAt < best.createdAt) best = p;
+
+    if (preferredNeeded && p.needed === preferredNeeded) {
+      if (!bestExact || p.createdAt < bestExact.createdAt) bestExact = p;
+    }
+    if (!bestAny || p.createdAt < bestAny.createdAt) bestAny = p;
   }
-  return best;
+
+  return bestExact || bestAny;
 }
 
 function getStats() {
@@ -142,7 +143,7 @@ function broadcastStats() {
   io.emit('stats', getStats());
 }
 
-/* ───────────────── party ops ───────────────── */
+/* ─────────── party ops ─────────── */
 
 function addMember(party, socket) {
   const member = {
@@ -198,17 +199,22 @@ function closeParty(partyId, reason, exceptSocket) {
   broadcastStats();
 }
 
+/**
+ * tryFill — pull waiting joiners into open parties.
+ * Waiter order is preserved; each waiter's preferred `needed`
+ * is used to pick the best party for them.
+ */
 function tryFill(mode) {
   let guard = 0;
   while (guard++ < 1000) {
-    const party = findOpenParty(mode);
-    if (!party) return;
-
     let entry = null;
     for (const w of waiting.values()) {
       if (w.mode === mode) { entry = w; break; }
     }
     if (!entry) return;
+
+    const party = findOpenParty(mode, entry.needed);
+    if (!party) return;
 
     waiting.delete(entry.socketId);
     const socket = io.sockets.sockets.get(entry.socketId);
@@ -220,7 +226,7 @@ function tryFill(mode) {
   }
 }
 
-/* ───────────────── socket wiring ───────────────── */
+/* ─────────── sockets ─────────── */
 
 io.on('connection', (socket) => {
   socket.data.callsign = makeCallsign();
@@ -235,6 +241,7 @@ io.on('connection', (socket) => {
     stats: getStats(),
   });
 
+  /* host */
   socket.on('search:host', (payload = {}, ack = () => {}) => {
     if (typeof ack !== 'function') ack = () => {};
     if (socket.data.partyId) return ack({ ok: false, error: 'You are already in a search.' });
@@ -274,6 +281,7 @@ io.on('connection', (socket) => {
     broadcastStats();
   });
 
+  /* joiner — now also accepts `needed` as a preference */
   socket.on('search:join', (payload = {}, ack = () => {}) => {
     if (typeof ack !== 'function') ack = () => {};
     if (socket.data.partyId) return ack({ ok: false, error: 'You are already in a search.' });
@@ -284,11 +292,18 @@ io.on('connection', (socket) => {
     const code = sanitizeCode(payload.code);
     if (!code) return ack({ ok: false, error: 'Enter a valid CS2 invite code.' });
 
+    const max = MODES[mode].teamSize - 1;
+    let needed = parseInt(payload.needed, 10);
+    if (!Number.isFinite(needed) || needed < 1 || needed > max) {
+      // If invalid, just treat as no preference rather than failing.
+      needed = null;
+    }
+
     socket.data.code = code;
     socket.data.role = 'joiner';
     socket.data.mode = mode;
 
-    const party = findOpenParty(mode);
+    const party = findOpenParty(mode, needed);
     if (party) {
       addMember(party, socket);
       ack({ ok: true, party: publicParty(party) });
@@ -298,6 +313,7 @@ io.on('connection', (socket) => {
     waiting.set(socket.id, {
       socketId: socket.id,
       mode,
+      needed,
       code,
       callsign: socket.data.callsign,
       since: Date.now(),
@@ -307,11 +323,13 @@ io.on('connection', (socket) => {
     socket.emit('queue:waiting', {
       mode,
       modeLabel: MODES[mode].label,
+      needed,
       since: Date.now(),
     });
     broadcastStats();
   });
 
+  /* cancel */
   socket.on('search:cancel', (_payload, ack = () => {}) => {
     if (typeof ack !== 'function') ack = () => {};
 
@@ -335,6 +353,7 @@ io.on('connection', (socket) => {
     ack({ ok: true });
   });
 
+  /* chat */
   socket.on('chat:send', (payload = {}) => {
     const partyId = socket.data.partyId;
     if (!partyId) return;
@@ -354,6 +373,7 @@ io.on('connection', (socket) => {
     });
   });
 
+  /* disconnect */
   socket.on('disconnect', () => {
     waiting.delete(socket.id);
 
@@ -372,7 +392,7 @@ io.on('connection', (socket) => {
   });
 });
 
-/* ───────────────── housekeeping ───────────────── */
+/* ─────────── housekeeping ─────────── */
 
 setInterval(() => {
   const now = Date.now();
@@ -392,8 +412,6 @@ setInterval(() => {
   }
   if (changed) broadcastStats();
 }, 60_000).unref();
-
-/* ───────────────── boot ───────────────── */
 
 server.listen(PORT, () => {
   console.log(`▲ CS2 HVH Team Finder listening on :${PORT}`);
