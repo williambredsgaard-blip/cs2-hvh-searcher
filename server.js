@@ -17,7 +17,12 @@ const io = new Server(server, {
   pingInterval: 20000,
 });
 
-app.use(express.static(__dirname, { index: 'index.html', maxAge: '1h' }));
+app.use(express.static(__dirname, {
+  index: 'index.html',
+  setHeaders(res, filePath) {
+    if (/\.(html|js|css)$/.test(filePath)) res.setHeader('Cache-Control', 'no-cache');
+  },
+}));
 app.get(
   ['/server.js', '/package.json', '/package-lock.json', '/render.yaml'],
   (_req, res) => res.sendStatus(404)
